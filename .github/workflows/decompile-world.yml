@@ -50,7 +50,7 @@ jobs:
           Set-Location src
           python -m pip install -e ./VrcwDownloader *> $null
           powershell -ExecutionPolicy Bypass -File publish-all.ps1 *> build.log
-          if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; Get-Content ..uild.log ; exit 1 }
 
       - name: step-3
         shell: pwsh
@@ -116,7 +116,7 @@ jobs:
             $tag = "${{ inputs.world_id }}-v$($meta['file_version'])-$stamp"
             $title = "$($meta['world_name']) v$($meta['file_version']) | ${{ inputs.world_id }} | $stamp UTC"
             $notes = "auto build`n`n- world: $($meta['world_name'])`n- id: ${{ inputs.world_id }}`n- platform: $($meta['platform'])`n- version: v$($meta['file_version'])`n- time: $stamp UTC"
-            gh release create $tag "udon-package.zip" "logs/download.log" "logs/decompile.log" "logs/unpack.log" -R SENyiAi/Udon --title $title --notes $notes *> $null
+            gh release create $tag "udon-package.zip" "logs/download.log" "logs/decompile.log" "logs/unpack.log" -R SENyiAi/Udon --title $title --notes $notes
           } else {
             gh release create "debug-$stamp" -R SENyiAi/Udon --title "debug $stamp" --notes "silent build failed; see run before deletion" *> $null
           }
