@@ -109,9 +109,9 @@ jobs:
           if (Test-Path src/.meta/world) {
             Get-Content src/.meta/world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
           }
-          $success = Test-Path src/udon-output/00_INDEX.txt
+          $success = Test-Path src/code/udon-output/00_INDEX.txt
           if ($success) {
-            Compress-Archive -Path src/udon-output/* -DestinationPath udon-package.zip -Force
+            Compress-Archive -Path src/code/udon-output/* -DestinationPath udon-package.zip -Force
             $tag = "${{ inputs.world_id }}-v$($meta['file_version'])-$stamp"
             $title = "$($meta['world_name']) v$($meta['file_version']) | ${{ inputs.world_id }} | $stamp UTC"
             $notes = "auto build`n`n- world: $($meta['world_name'])`n- id: ${{ inputs.world_id }}`n- platform: $($meta['platform'])`n- version: v$($meta['file_version'])`n- time: $stamp UTC"
