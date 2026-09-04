@@ -50,7 +50,7 @@ jobs:
           Set-Location src
           python -m pip install -e ./VrcwDownloader *> $null
           powershell -ExecutionPolicy Bypass -File publish-all.ps1 *> build.log
-          if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; Get-Content ..uild.log ; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; Get-Content ..\build.log ; exit 1 }
 
       - name: step-3
         shell: pwsh
