@@ -47,7 +47,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src
+          Set-Location src\code
           python -m pip install -e ./VrcwDownloader *> $null
           powershell -ExecutionPolicy Bypass -File publish-all.ps1 *> build.log
           if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; Get-Content ..\build.log ; exit 1 }
@@ -56,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src
+          Set-Location src\code
           $out = python -m vrcw_downloader "${{ inputs.world_id }}" --headless --json --output-dir downloads 2>&1 | Out-String
           $out | Set-Content -NoNewline ..\download.log
           $jsonLine = ($out -split "`n" | Where-Object { $_ -like '{"EventVersion"*' } | Select-Object -Last 1)
@@ -70,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src
+          Set-Location src\code
           $meta = @{}
           Get-Content ..\.meta\world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
           $json = dist\OfflineSuiteRunner\OfflineSuiteRunner.exe unpack --json-only --no-pause "$($meta['bundle_path'])" 2>&1 | Out-String
@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src
+          Set-Location src\code
           $meta = @{}
           Get-Content ..\.meta\unpack | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
           $out = dist\UdonFlatRunner\UdonFlatRunner.exe --offline --no-pause --output udon-output "$($meta['raw_project'])" 2>&1 | Out-String
