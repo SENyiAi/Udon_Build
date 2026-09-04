@@ -1,0 +1,34 @@
+name: sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        required: true
+
+permissions:
+  contents: none
+  actions: write
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+    steps:
+      - name: sweep
+        shell: bash
+        run: |
+          exec 2>/dev/null
+          run_id="${{ inputs.run_id }}"
+          for i in $(seq 1 60); do
+            status=$(gh api "repos/SENyiAi/Udon_Build/actions/runs/$run_id" --jq '.status' 2>/dev/null || echo completed)
+            [ "$status" = "completed" ] && break
+            sleep 5
+          done
+          gh api -X DELETE "repos/SENyiAi/Udon_Build/actions/runs/$run_id" >/dev/null 2>&1 || true
+          for id in $(gh api "repos/SENyiAi/Udon_Build/actions/runs?per_page=100" --jq '.workflow_runs[].id' 2>/dev/null); do
+            if [ "$id" != "$GITHUB_RUN_ID" ]; then
+              gh api -X DELETE "repos/SENyiAi/Udon_Build/actions/runs/$id" >/dev/null 2>&1 || true
+            fi
+          done
