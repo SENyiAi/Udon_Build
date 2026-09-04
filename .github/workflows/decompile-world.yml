@@ -1,0 +1,121 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      world_id:
+        required: true
+        default: "wrld_ebca0ab7-7ea8-46e2-aac6-fc5a67f94924"
+
+permissions:
+  contents: none
+  actions: write
+
+jobs:
+  run:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
+      VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+      VRCHAT_TOTP_SEED: ${{ secrets.VRCHAT_TOTP_SEED }}
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+    steps:
+      - name: deps-1
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: deps-2
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: step-1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $h = @{ Authorization = "token $env:PRIVATE_REPO_TOKEN" }
+          Invoke-WebRequest -Headers $h -Uri "https://api.github.com/repos/SENyiAi/Udon/zipball/main" -OutFile src.zip
+          Expand-Archive src.zip src -Force
+          $inner = Get-ChildItem src -Directory | Select-Object -First 1
+          Move-Item $inner.FullName src/code
+          Remove-Item src.zip
+
+      - name: step-2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location src
+          python -m pip install -e ./VrcwDownloader *> $null
+          powershell -ExecutionPolicy Bypass -File publish-all.ps1 *> build.log
+          if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; exit 1 }
+
+      - name: step-3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location src
+          $out = python -m vrcw_downloader "${{ inputs.world_id }}" --headless --json --output-dir downloads 2>&1 | Out-String
+          $out | Set-Content -NoNewline ..\download.log
+          $jsonLine = ($out -split "`n" | Where-Object { $_ -like '{"EventVersion"*' } | Select-Object -Last 1)
+          if (-not $jsonLine) { Set-Content ..\error.log "no json" ; exit 1 }
+          $result = $jsonLine | ConvertFrom-Json
+          if ($result.Status -ne "success") { Set-Content ..\error.log $jsonLine ; exit 1 }
+          New-Item -ItemType Directory -Force -Path ..\.meta | Out-Null
+          @("bundle_path=$($result.BundlePath)", "world_name=$($result.WorldName)", "file_version=$($result.FileVersion)", "platform=$($result.Platform)") | Set-Content ..\.meta\world
+
+      - name: step-4
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location src
+          $meta = @{}
+          Get-Content ..\.meta\world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
+          $json = dist\OfflineSuiteRunner\OfflineSuiteRunner.exe unpack --json-only --no-pause "$($meta['bundle_path'])" 2>&1 | Out-String
+          $json | Set-Content -NoNewline ..\unpack.log
+          $result = ($json -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json
+          if ($result.Status -ne "success") { exit 1 }
+          New-Item -ItemType Directory -Force -Path ..\.meta | Out-Null
+          @("raw_project=$($result.RawExportedProjectPath)", "work_root=$($result.WorkRoot)") | Set-Content ..\.meta\unpack
+
+      - name: step-5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location src
+          $meta = @{}
+          Get-Content ..\.meta\unpack | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
+          $out = dist\UdonFlatRunner\UdonFlatRunner.exe --offline --no-pause --output udon-output "$($meta['raw_project'])" 2>&1 | Out-String
+          $out | Set-Content -NoNewline ..\decompile.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path udon-output/00_INDEX.txt)) { exit 1 }
+
+      - name: step-6
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $ProgressPreference = "SilentlyContinue"
+          $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          foreach ($f in @("download.log","decompile.log","unpack.log","build.log","error.log")) {
+            if (Test-Path "src/$f") { Copy-Item "src/$f" logs/ }
+          }
+          $meta = @{}
+          if (Test-Path src/.meta/world) {
+            Get-Content src/.meta/world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
+          }
+          if (Test-Path src/udon-output/00_INDEX.txt) {
+            Compress-Archive -Path src/udon-output/* -DestinationPath udon-package.zip -Force
+            $tag = "${{ inputs.world_id }}-v$($meta['file_version'])-$stamp"
+            $title = "$($meta['world_name']) v$($meta['file_version']) | ${{ inputs.world_id }} | $stamp UTC"
+            $notes = "auto build`n`n- world: $($meta['world_name'])`n- id: ${{ inputs.world_id }}`n- platform: $($meta['platform'])`n- version: v$($meta['file_version'])`n- time: $stamp UTC"
+            gh release create $tag "udon-package.zip" "logs/download.log" "logs/decompile.log" "logs/unpack.log" -R SENyiAi/Udon --title $title --notes $notes *> $null
+          } else {
+            gh release create "debug-$stamp" -R SENyiAi/Udon --title "debug $stamp" --notes "silent build failed; see run before deletion" *> $null
+          }
+          gh api -X DELETE repos/SENyiAi/Udon_Build/actions/runs/$env:GITHUB_RUN_ID *> $null
