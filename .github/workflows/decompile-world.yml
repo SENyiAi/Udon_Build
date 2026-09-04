@@ -53,11 +53,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Get-Content ../build-publish.log -Tail 40 ; exit 1 }
 
       - name: step-3
+        env:
+          WORLD_ID: ${{ inputs.world_id }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          if ($env:WORLD_ID -notmatch '^wrld_[0-9a-fA-F-]{36}$') { Set-Content ../error.log "invalid world id" ; exit 1 }
           Set-Location src/code
-          $out = python -m vrcw_downloader "${{ inputs.world_id }}" --headless --json --output-dir downloads 2>&1 | Out-String
+          $out = python -m vrcw_downloader "$env:WORLD_ID" --headless --json --output-dir downloads 2>&1 | Out-String
           $out | Set-Content -NoNewline ../download.log
           $jsonLine = ($out -split "`n" | Where-Object { $_ -like '{"EventVersion"*' } | Select-Object -Last 1)
           if (-not $jsonLine) { Set-Content ../error.log "no json" ; exit 1 }
@@ -96,6 +99,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          WORLD_ID: ${{ inputs.world_id }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
@@ -112,9 +116,9 @@ jobs:
           $success = Test-Path src/code/udon-output/00_INDEX.txt
           if ($success) {
             Compress-Archive -Path src/code/udon-output/* -DestinationPath udon-package.zip -Force
-            $tag = "${{ inputs.world_id }}-v$($meta['file_version'])-$stamp"
-            $title = "$($meta['world_name']) v$($meta['file_version']) | ${{ inputs.world_id }} | $stamp UTC"
-            $notes = "auto build`n`n- world: $($meta['world_name'])`n- id: ${{ inputs.world_id }}`n- platform: $($meta['platform'])`n- version: v$($meta['file_version'])`n- time: $stamp UTC"
+            $tag = "$env:WORLD_ID-v$($meta['file_version'])-$stamp"
+            $title = "$($meta['world_name']) v$($meta['file_version']) | $env:WORLD_ID | $stamp UTC"
+            $notes = "auto build`n`n- world: $($meta['world_name'])`n- id: $env:WORLD_ID`n- platform: $($meta['platform'])`n- version: v$($meta['file_version'])`n- time: $stamp UTC"
             gh release create $tag "udon-package.zip" "logs/download.log" "logs/decompile.log" "logs/unpack.log" -R SENyiAi/Udon --title $title --notes $notes
           } else {
             $assets = @()
