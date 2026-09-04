@@ -47,48 +47,48 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src\code
-          python -m pip install -e ./VrcwDownloader *> $null
-          powershell -ExecutionPolicy Bypass -File publish-all.ps1 *> build.log
-          if ($LASTEXITCODE -ne 0) { Move-Item build.log .. ; Get-Content ..\build.log ; exit 1 }
+          Set-Location src/code
+          python -m pip install -e ./VrcwDownloader *> ../build-pip.log
+          powershell -ExecutionPolicy Bypass -File publish-all.ps1 *> ../build-publish.log
+          if ($LASTEXITCODE -ne 0) { Get-Content ../build-publish.log -Tail 40 ; exit 1 }
 
       - name: step-3
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src\code
+          Set-Location src/code
           $out = python -m vrcw_downloader "${{ inputs.world_id }}" --headless --json --output-dir downloads 2>&1 | Out-String
-          $out | Set-Content -NoNewline ..\download.log
+          $out | Set-Content -NoNewline ../download.log
           $jsonLine = ($out -split "`n" | Where-Object { $_ -like '{"EventVersion"*' } | Select-Object -Last 1)
-          if (-not $jsonLine) { Set-Content ..\error.log "no json" ; exit 1 }
+          if (-not $jsonLine) { Set-Content ../error.log "no json" ; exit 1 }
           $result = $jsonLine | ConvertFrom-Json
-          if ($result.Status -ne "success") { Set-Content ..\error.log $jsonLine ; exit 1 }
-          New-Item -ItemType Directory -Force -Path ..\.meta | Out-Null
-          @("bundle_path=$($result.BundlePath)", "world_name=$($result.WorldName)", "file_version=$($result.FileVersion)", "platform=$($result.Platform)") | Set-Content ..\.meta\world
+          if ($result.Status -ne "success") { Set-Content ../error.log $jsonLine ; exit 1 }
+          New-Item -ItemType Directory -Force -Path ../.meta | Out-Null
+          @("bundle_path=$($result.BundlePath)", "world_name=$($result.WorldName)", "file_version=$($result.FileVersion)", "platform=$($result.Platform)") | Set-Content ../.meta/world
 
       - name: step-4
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src\code
+          Set-Location src/code
           $meta = @{}
-          Get-Content ..\.meta\world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
-          $json = dist\OfflineSuiteRunner\OfflineSuiteRunner.exe unpack --json-only --no-pause "$($meta['bundle_path'])" 2>&1 | Out-String
-          $json | Set-Content -NoNewline ..\unpack.log
+          Get-Content ../.meta/world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
+          $json = dist/OfflineSuiteRunner/OfflineSuiteRunner.exe unpack --json-only --no-pause "$($meta['bundle_path'])" 2>&1 | Out-String
+          $json | Set-Content -NoNewline ../unpack.log
           $result = ($json -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json
-          if ($result.Status -ne "success") { exit 1 }
-          New-Item -ItemType Directory -Force -Path ..\.meta | Out-Null
-          @("raw_project=$($result.RawExportedProjectPath)", "work_root=$($result.WorkRoot)") | Set-Content ..\.meta\unpack
+          if ($result.Status -ne "success") { Set-Content ../error.log $json ; exit 1 }
+          New-Item -ItemType Directory -Force -Path ../.meta | Out-Null
+          @("raw_project=$($result.RawExportedProjectPath)", "work_root=$($result.WorkRoot)") | Set-Content ../.meta/unpack
 
       - name: step-5
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Set-Location src\code
+          Set-Location src/code
           $meta = @{}
-          Get-Content ..\.meta\unpack | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
-          $out = dist\UdonFlatRunner\UdonFlatRunner.exe --offline --no-pause --output udon-output "$($meta['raw_project'])" 2>&1 | Out-String
-          $out | Set-Content -NoNewline ..\decompile.log
+          Get-Content ../.meta/unpack | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
+          $out = dist/UdonFlatRunner/UdonFlatRunner.exe --offline --no-pause --output udon-output "$($meta['raw_project'])" 2>&1 | Out-String
+          $out | Set-Content -NoNewline ../decompile.log
           if ($LASTEXITCODE -ne 0) { exit 1 }
           if (-not (Test-Path udon-output/00_INDEX.txt)) { exit 1 }
 
@@ -102,22 +102,29 @@ jobs:
           $ProgressPreference = "SilentlyContinue"
           $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
           New-Item -ItemType Directory -Force -Path logs | Out-Null
-          foreach ($f in @("download.log","decompile.log","unpack.log","error.log")) {
+          foreach ($f in @("download.log","decompile.log","unpack.log","error.log","build-pip.log","build-publish.log")) {
             if (Test-Path "src/$f") { Copy-Item "src/$f" logs/ }
           }
-          if (Test-Path "src/build.log") { Copy-Item "src/build.log" logs/ }
-          if (Test-Path "build.log") { Copy-Item "build.log" logs/ }
           $meta = @{}
           if (Test-Path src/.meta/world) {
             Get-Content src/.meta/world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
           }
-          if (Test-Path src/udon-output/00_INDEX.txt) {
+          $success = Test-Path src/udon-output/00_INDEX.txt
+          if ($success) {
             Compress-Archive -Path src/udon-output/* -DestinationPath udon-package.zip -Force
             $tag = "${{ inputs.world_id }}-v$($meta['file_version'])-$stamp"
             $title = "$($meta['world_name']) v$($meta['file_version']) | ${{ inputs.world_id }} | $stamp UTC"
             $notes = "auto build`n`n- world: $($meta['world_name'])`n- id: ${{ inputs.world_id }}`n- platform: $($meta['platform'])`n- version: v$($meta['file_version'])`n- time: $stamp UTC"
             gh release create $tag "udon-package.zip" "logs/download.log" "logs/decompile.log" "logs/unpack.log" -R SENyiAi/Udon --title $title --notes $notes
           } else {
-            gh release create "debug-$stamp" -R SENyiAi/Udon --title "debug $stamp" --notes "silent build failed; see run before deletion" *> $null
+            $assets = @()
+            foreach ($f in @("logs/error.log","logs/download.log","logs/unpack.log","logs/build-publish.log","logs/build-pip.log","logs/decompile.log")) {
+              if (Test-Path $f) { $assets += $f }
+            }
+            if ($assets.Count -gt 0) {
+              gh release create "debug-$stamp" $assets -R SENyiAi/Udon --title "debug $stamp" --notes "silent build failed; logs attached"
+            } else {
+              gh release create "debug-$stamp" -R SENyiAi/Udon --title "debug $stamp" --notes "silent build failed; no logs"
+            }
           }
-          gh api -X DELETE repos/SENyiAi/Udon_Build/actions/runs/$env:GITHUB_RUN_ID *> $null
+          gh workflow run sweep.yml --ref main -f run_id=$env:GITHUB_RUN_ID -R SENyiAi/Udon_Build
