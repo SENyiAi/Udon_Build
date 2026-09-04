@@ -102,9 +102,11 @@ jobs:
           $ProgressPreference = "SilentlyContinue"
           $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
           New-Item -ItemType Directory -Force -Path logs | Out-Null
-          foreach ($f in @("download.log","decompile.log","unpack.log","build.log","error.log")) {
+          foreach ($f in @("download.log","decompile.log","unpack.log","error.log")) {
             if (Test-Path "src/$f") { Copy-Item "src/$f" logs/ }
           }
+          if (Test-Path "src/build.log") { Copy-Item "src/build.log" logs/ }
+          if (Test-Path "build.log") { Copy-Item "build.log" logs/ }
           $meta = @{}
           if (Test-Path src/.meta/world) {
             Get-Content src/.meta/world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
