@@ -1,0 +1,57 @@
+name: decompile-all
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      world_id:
+        description: "Force build single world (empty = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: decompile-all
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      PYTHONUTF8: "1"
+      VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
+      VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+      VRCHAT_TOTP_SEED: ${{ secrets.VRCHAT_TOTP_SEED }}
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      FORCE_WORLD: ${{ inputs.world_id }}
+    steps:
+      - name: pull-source
+        shell: bash
+        run: |
+          set -e
+          curl -s -H "Authorization: token $PRIVATE_REPO_TOKEN" \
+            -L "https://api.github.com/repos/SENyiAi/Udon/zipball/main" -o src.zip
+          unzip -q src.zip -d src
+          mv src/SENyiAi-Udon-*/ src/code
+          rm src.zip
+
+      - name: setup-dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: run
+        shell: pwsh
+        run: |
+          Set-Location src/code
+          python auto_decompile.py 2>&1 | Tee-Object -FilePath ../output.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
