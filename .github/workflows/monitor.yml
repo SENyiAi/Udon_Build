@@ -17,14 +17,34 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
+      PYTHONUTF8: "1"
+      VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
+      VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+      VRCHAT_TOTP_SEED: ${{ secrets.VRCHAT_TOTP_SEED }}
       PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
-      CHECK_INTERVAL_SECONDS: "15"
-      GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      GH_DISPATCH_TOKEN: ${{ github.token }}
+      CHECK_INTERVAL_MIN_SECONDS: "2"
+      CHECK_INTERVAL_MAX_SECONDS: "5"
     steps:
+      - name: pull-source
+        shell: bash
+        run: |
+          set -e
+          curl -s -H "Authorization: token $PRIVATE_REPO_TOKEN" \
+            -L "https://api.github.com/repos/SENyiAi/Udon/zipball/main" -o src.zip
+          unzip -q src.zip -d src
+          mv src/SENyiAi-Udon-*/ src/code
+          rm src.zip
+
+      - name: setup-python
+        shell: bash
+        run: |
+          set -e
+          python3 -m pip install --quiet -e src/code/VrcwDownloader requests
+
       - name: check-updates
         shell: bash
         run: |
           set -u
-          curl -s -o monitor_check.py -H "Authorization: token $PRIVATE_REPO_TOKEN" \
-            "https://raw.githubusercontent.com/SENyiAi/Udon/main/monitor_check.py"
+          cd src/code
           python3 monitor_check.py 2>&1 | tee /tmp/monitor.log
