@@ -17,58 +17,32 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      PYTHONUTF8: "1"
+      VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
+      VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
+      VRCHAT_TOTP_SEED: ${{ secrets.VRCHAT_TOTP_SEED }}
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      CHECK_INTERVAL_SECONDS: "180"
     steps:
+      - name: pull-source
+        shell: bash
+        run: |
+          set -e
+          curl -s -H "Authorization: token $PRIVATE_REPO_TOKEN" \
+            -L "https://api.github.com/repos/SENyiAi/Udon/zipball/main" -o src.zip
+          unzip -q src.zip -d src
+          mv src/SENyiAi-Udon-*/ src/code
+          rm src.zip
+
+      - name: setup-python
+        shell: bash
+        run: |
+          set -e
+          python3 -m pip install --quiet -e src/code/VrcwDownloader requests
+
       - name: check-updates
-        env:
-          CHECK_INTERVAL_SECONDS: "180"
         shell: bash
         run: |
           set -u
-          mapfile -t worlds < <(curl -s --retry 3 "https://raw.githubusercontent.com/SENyiAi/Udon_Build/main/worlds.txt" | grep -E '^wrld_[0-9a-f-]{36}$' | sort -u)
-          echo "monitoring ${#worlds[@]} worlds"
-
-          # 已发布版本基线：私有仓库 Release tags（wrld_<id>-v<N>-<ts>）
-          gh api "repos/SENyiAi/Udon/releases?per_page=100" --paginate \
-            --jq '.[].tag_name' > released_tags.txt 2>/dev/null || true
-
-          updated=0
-          checked=0
-          failed=0
-          for world in "${worlds[@]}"; do
-            [ "$checked" -gt 0 ] && sleep "$CHECK_INTERVAL_SECONDS"
-            checked=$((checked+1))
-
-            # VRChat 公开 API：当前世界最新 file version
-            http=$(curl -s -o world.json -w "%{http_code}" --retry 2 \
-              "https://api.vrchat.cloud/api/1/worlds/${world}")
-            if [ "$http" != "200" ]; then
-              echo "::warning::${world}: api http ${http}"
-              failed=$((failed+1))
-              continue
-            fi
-
-            remote_ver=$(python3 -c "
-import json
-d = json.load(open('world.json'))
-vers = [p.get('version', 0) for p in d.get('unityPackages', []) if p.get('platform') == 'standalonewindows']
-print(max(vers) if vers else 0)
-" 2>/dev/null || echo 0)
-
-            # 已发布的最高版本（tag: wrld_<id>-v<N>-<ts>）
-            released_ver=$(grep -E "^${world}-v[0-9]+-" released_tags.txt 2>/dev/null \
-              | grep -oE -- "-v[0-9]+-" | tr -d '-v' | sort -n | tail -1)
-            released_ver=${released_ver:-0}
-
-            if [ "$remote_ver" -le "$released_ver" ]; then
-              echo "${world}: up-to-date (remote v${remote_ver} <= released v${released_ver})"
-              continue
-            fi
-
-            echo "${world}: UPDATE remote v${remote_ver} > released v${released_ver} -> dispatch build"
-            gh workflow run decompile-world.yml --ref main \
-              -f world_id="$world" -R SENyiAi/Udon_Build
-            updated=$((updated+1))
-          done
-
-          echo "SUMMARY: checked=${checked} updated=${updated} api_failed=${failed}"
+          cd src/code
+          python3 monitor_check.py 2>&1 | tee /tmp/monitor.log
