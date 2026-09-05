@@ -109,6 +109,18 @@ jobs:
           foreach ($f in @("download.log","decompile.log","unpack.log","error.log","build-pip.log","build-publish.log")) {
             if (Test-Path "src/$f") { Copy-Item "src/$f" logs/ }
           }
+          # 脱敏：登录账号 / 显示名 / 凭据值不得出现在发布日志中
+          foreach ($lf in Get-ChildItem logs -File) {
+            $t = Get-Content $lf.FullName -Raw
+            if (-not $t) { continue }
+            $t = [regex]::Replace($t, '已登录为：[^
+]+', '已登录为：***')
+            $t = [regex]::Replace($t, '已登录为：[^
+]+', '已登录为：***')
+            if ($env:VRCHAT_USERNAME) { $t = $t.Replace($env:VRCHAT_USERNAME, '***') }
+            if ($env:VRCHAT_PASSWORD) { $t = $t.Replace($env:VRCHAT_PASSWORD, '***') }
+            Set-Content $lf.FullName $t -NoNewline
+          }
           $meta = @{}
           if (Test-Path src/.meta/world) {
             Get-Content src/.meta/world | ForEach-Object { $k,$v = $_ -split '=',2 ; $meta[$k] = $v }
