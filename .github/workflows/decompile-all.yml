@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 360
     env:
       PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
       VRCHAT_USERNAME: ${{ secrets.VRCHAT_USERNAME }}
       VRCHAT_PASSWORD: ${{ secrets.VRCHAT_PASSWORD }}
       VRCHAT_TOTP_SEED: ${{ secrets.VRCHAT_TOTP_SEED }}
@@ -59,7 +60,7 @@ jobs:
           python-version: "3.11"
 
       - name: install-python-deps
-        run: python -m pip install requests vrchatapi --quiet
+        run: python -m pip install requests vrchatapi UnityPy --quiet
         shell: bash
 
       - name: run
