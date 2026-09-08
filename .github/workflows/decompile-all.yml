@@ -9,13 +9,16 @@ on:
         description: "Force build single world (empty = all)"
         required: false
         default: ""
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
   group: decompile-all
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -30,6 +33,24 @@ jobs:
       PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
       FORCE_WORLD: ${{ inputs.world_id }}
     steps:
+      - name: purge-history
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          # This repository only exists to run the pipeline: delete previous
+          # completed Actions runs so the page never accumulates history.
+          set +e
+          runs=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?status=completed&per_page=100" \
+            | grep -oP '"id":\s*\K[0-9]+' \
+            | grep -v "^${GITHUB_RUN_ID}$")
+          for id in $runs; do
+            curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/$id"
+          done
+          exit 0
+
       - name: pull-source
         shell: bash
         run: |
@@ -60,7 +81,7 @@ jobs:
           python-version: "3.11"
 
       - name: install-python-deps
-        run: python -m pip install requests vrchatapi UnityPy --quiet
+        run: python -m pip install requests vrchatapi UnityPy pypinyin --quiet
         shell: bash
 
       - name: run
