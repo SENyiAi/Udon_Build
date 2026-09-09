@@ -1,0 +1,13 @@
+name: test-self-delete
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: test
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          echo "Testing background self-delete"
+          nohup bash -c 'sleep 8 && curl -s -X DELETE -H "Authorization: token '"$GH_TOKEN"'" "https://api.github.com/repos/'"$GITHUB_REPOSITORY"'/actions/runs/'"$GITHUB_RUN_ID"'"' >/dev/null 2>&1 &
+          echo "Spawned background detached process"
