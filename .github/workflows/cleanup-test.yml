@@ -1,0 +1,17 @@
+name: cleanup-test
+on: workflow_dispatch
+permissions:
+  actions: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: do-step
+        run: echo "test log"
+      - name: try-delete-own-logs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          code=$(curl -s -w "%{http_code}" -o /dev/null -X DELETE -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/logs")
+          echo "Delete own logs HTTP response: $code"
