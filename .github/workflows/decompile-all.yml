@@ -9,9 +9,6 @@ on:
         description: "Force build single world (empty = all)"
         required: false
         default: ""
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -88,5 +85,5 @@ jobs:
         shell: pwsh
         run: |
           Set-Location src/code
-          python auto_decompile.py 2>&1 | Tee-Object -FilePath ../output.log
+          python auto_decompile.py
           if ($LASTEXITCODE -ne 0) { exit 1 }
